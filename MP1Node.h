@@ -19,7 +19,8 @@
  * Macros
  */
 #define TREMOVE 20
-#define TFAIL 5
+#define TFAIL 10
+#define GOSSIP_FANOUT 3
 
 /*
  * Note: You can change/add any functions in MP1Node.{h,cpp}
@@ -31,6 +32,7 @@
 enum MsgTypes{
     JOINREQ,
     JOINREP,
+    HEARTBEAT,
     DUMMYLASTMSGTYPE
 };
 
@@ -55,7 +57,8 @@ private:
 	Params *par;
 	Member *memberNode;
 	char NULLADDR[6];
-
+    bool isIntroducer;
+    
 public:
 	MP1Node(Member *, Params *, EmulNet *, Log *, Address *);
 	Member * getMemberNode() {
@@ -75,7 +78,23 @@ public:
 	Address getJoinAddress();
 	void initMemberListTable(Member *memberNode);
 	void printAddress(Address *addr);
+	void processPeerMemberList(const vector<MemberListEntry>& peerMemberList);
+	
 	virtual ~MP1Node();
+	
+private:
+    void processJoinReqMsg(void *env, char *data, int size);
+    void processJoinRepMsg(void *env, char *data, int size);
+    void processHeartbeatMsg(void *env, char *data, int size);
+    void removeStaleMembers();
+    void updateOwnHeartbeat();
+    void* prepareHeartbeatMsg(Address* addrPtr, long* heartBeat, vector<MemberListEntry>& memberList, size_t* msgSize);
+    void* prepareJoinRepMsg(Address* addrPtr, long* heartBeat, vector<MemberListEntry>& memberList, size_t* msgSize);
+    bool isNodePresentInList(const MemberListEntry& node);
+    
+    vector<MemberListEntry> selectFanoutRandomPeers();
+    void printMemberList(const vector<MemberListEntry>& memberList);
+	void printMemberList(vector<MemberListEntry>::const_iterator begin, vector<MemberListEntry>::const_iterator end);
 };
 
 #endif /* _MP1NODE_H_ */
