@@ -5,6 +5,9 @@
  **********************************/
 #include "MP2Node.h"
 
+//Forward decl
+bool areMemListEqual(vector<Node>& vec1, vector<Node>& vec2); 
+
 /**
  * constructor
  */
@@ -45,11 +48,36 @@ void MP2Node::updateRing() {
 	sort(curMemList.begin(), curMemList.end());
 
   //Step 3: Run the stabilization protocol IF REQUIRED
-  // Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
-  bool change = (ring != curMemList);
+  //Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
+  bool change = areMemListEqual(curMemList, ring);
+  
   if(!ht->isEmpty() && change) {
     //Run stabilization protocol
   }
+}
+
+bool areMemListEqual(vector<Node>& vec1, vector<Node>& vec2) {
+  if(vec1.size() != vec2.size()) {
+    return false;
+  }
+  
+  //Both empty vectors
+  if(vec1.size() == 0) {
+    return true;
+  }
+  
+  vector<Node>::iterator citr1 = vec1.begin();
+  vector<Node>::iterator citr2 = vec2.begin();
+  while(citr1 != vec1.end()) {
+    if(citr1->getHashCode() != citr2->getHashCode()) {
+      return false;
+    }
+    
+    citr1++;
+    citr2++;
+  }
+  
+  return true;
 }
 
 /**
