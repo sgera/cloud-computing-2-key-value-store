@@ -164,10 +164,19 @@ void MP2Node::clientDelete(string key){
  * 			   	2) Return true or false based on success or failure
  */
 bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
-	/*
-	 * Implement this
-	 */
-	// Insert key, value, replicaType into the hash table
+	//TODO: Find use of replicaType
+	bool result = ht->create(key, value);
+
+#ifdef DEBUGLOGMP2
+	if(result) {
+		log->logCreateSuccess(&memberNode->addr, false, 0, key, value);
+	}
+	else {
+		log->logUpdateFail(&memberNode->addr, false, 0, key, value);
+	}
+#endif
+
+	return result;
 }
 
 /**
@@ -179,10 +188,19 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
  * 			    2) Return value
  */
 string MP2Node::readKey(string key) {
-	/*
-	 * Implement this
-	 */
-	// Read key from local hash table and return value
+
+	string value = ht->read(key);
+
+#ifdef DEBUGLOGMP2
+	if(value.empty()) {
+		log->logReadFail(&memberNode->addr, false, 0, key);
+	}
+	else {
+		log->logReadSuccess(&memberNode->addr, false, 0, key, value);
+	}
+#endif
+
+	return value;
 }
 
 /**
@@ -194,10 +212,19 @@ string MP2Node::readKey(string key) {
  * 				2) Return true or false based on success or failure
  */
 bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
-	/*
-	 * Implement this
-	 */
-	// Update key in local hash table and return true or false
+	//TODO: Find use of replicaType
+	bool result = ht->update(key, value);
+
+#ifdef DEBUGLOGMP2
+	if(result) {
+		log->logUpdateSuccess(&memberNode->addr, false, 0, key, value);
+	}
+	else {
+		log->logUpdateFail(&memberNode->addr, false, 0, key, value);
+	}
+#endif
+
+	return result;
 }
 
 /**
@@ -209,10 +236,19 @@ bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
  * 				2) Return true or false based on success or failure
  */
 bool MP2Node::deletekey(string key) {
-	/*
-	 * Implement this
-	 */
-	// Delete the key from the local hash table
+	
+	bool result = ht->deleteKey(key);
+
+#ifdef DEBUGLOGMP2
+	if(result) {
+		log->logDeleteSuccess(&memberNode->addr, false, 0, key);
+	}
+	else {
+		log->logDeleteFail(&memberNode->addr, false, 0, key);
+	}
+#endif
+
+	return result;
 }
 
 /**

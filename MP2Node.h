@@ -19,6 +19,8 @@
 #include "Message.h"
 #include "Queue.h"
 
+#define DEBUGLOGMP2
+
 /**
  * CLASS NAME: MP2Node
  *
