@@ -6,7 +6,7 @@
 #include "MP2Node.h"
 
 //Forward decl
-bool areMemListEqual(vector<Node>& vec1, vector<Node>& vec2); 
+bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2); 
 
 /**
  * constructor
@@ -48,36 +48,12 @@ void MP2Node::updateRing() {
 	sort(curMemList.begin(), curMemList.end());
 
   //Step 3: Run the stabilization protocol IF REQUIRED
+  bool change = areMemListsEqual(curMemList, ring);
+  
   //Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
-  bool change = areMemListEqual(curMemList, ring);
-  
   if(!ht->isEmpty() && change) {
-    //Run stabilization protocol
+    stabilizationProtocol();
   }
-}
-
-bool areMemListEqual(vector<Node>& vec1, vector<Node>& vec2) {
-  if(vec1.size() != vec2.size()) {
-    return false;
-  }
-  
-  //Both empty vectors
-  if(vec1.size() == 0) {
-    return true;
-  }
-  
-  vector<Node>::iterator citr1 = vec1.begin();
-  vector<Node>::iterator citr2 = vec2.begin();
-  while(citr1 != vec1.end()) {
-    if(citr1->getHashCode() != citr2->getHashCode()) {
-      return false;
-    }
-    
-    citr1++;
-    citr2++;
-  }
-  
-  return true;
 }
 
 /**
@@ -346,7 +322,56 @@ int MP2Node::enqueueWrapper(void *env, char *buff, int size) {
  *				Note:- "CORRECT" replicas implies that every key is replicated in its two neighboring nodes in the ring
  */
 void MP2Node::stabilizationProtocol() {
-	/*
-	 * Implement this
-	 */
+	
+	//--- Handle corner cases with 1,2 nodes in the system ---
+	//If ring size is 2 (shortcut -- hacky)
+		//Transfer all data to the peer
+	
+	//If ring size is 1
+		//No action
+		
+	//--- Common logic for node addition/deletion in/from the ring ---
+	//Iterate all data keys and call findNodes method().
+		//If current node is part of find Nodes (I am the replica)
+			//Check if old HRO == new HRO - then ignore
+			//If not, 
+				//and if I am the primary replica (optional?), 
+				//and if that data is applicable for new HRO (i.e. new HRO present in find Nodes), 
+					//then transfer this data to new HRO(s). (These node(s) are new owners.) 
+					//If success, add this node(s) to HRO.
+		
+		//If current node is part of find Nodes (I am the owner)
+			//Check if old IMR == new IMR - then ignore
+			//If not, then transfer this data to new IMR(s). (These node(s) are prospective replica.) If success, add this node(s) to IMR.
+	
+	//--- Delete unwanted data (After successfuly processing all data keys) ---
+	//Iterate all data keys and call findNodes method.
+		//If current node is not a part of find Nodes, delete that data key. [Can be done within +- affected node]
+
+
+	//--- Update new vectors (HRO, IMR) to the global ones. ---
+}
+
+bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2) {
+  if(vec1.size() != vec2.size()) {
+    return false;
+  }
+  
+  //Both empty vectors
+  if(vec1.size() == 0) {
+    return true;
+  }
+  
+  vector<Node>::iterator citr1 = vec1.begin();
+  vector<Node>::iterator citr2 = vec2.begin();
+  while(citr1 != vec1.end()) {
+    if(citr1->getHashCode() != citr2->getHashCode()) {
+      return false;
+    }
+    
+    citr1++;
+    citr2++;
+  }
+  
+  return true;
 }
