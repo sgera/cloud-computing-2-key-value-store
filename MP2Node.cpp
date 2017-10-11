@@ -95,6 +95,11 @@ size_t MP2Node::hashFunction(string key) {
 	return ret%RING_SIZE;
 }
 
+void MP2Node::sendMessage(Address* toAddr, Message& message) {
+	string data = message.toString();
+	emulNet->ENsend(&memberNode->addr, toAddr, data);
+}
+
 /**
  * FUNCTION NAME: clientCreate
  *
@@ -105,9 +110,14 @@ size_t MP2Node::hashFunction(string key) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientCreate(string key, string value) {
-	/*
-	 * Implement this
-	 */
+	Message message(g_transID++, memberNode->addr, MessageType::CREATE, key, value);
+	
+	//TODO: Keep state of this transaction ID and create request.
+	//Log when QUORUM acknoledgements are recieved for this transaction ID.
+	vector<Node> replicas = findNodes(key);
+	for(Node& node : replicas) {
+		sendMessage(&node.nodeAddress, message);
+	}
 }
 
 /**
@@ -120,9 +130,14 @@ void MP2Node::clientCreate(string key, string value) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientRead(string key){
-	/*
-	 * Implement this
-	 */
+	Message message(g_transID++, memberNode->addr, MessageType::READ, key);
+	
+	//TODO: Keep state of this transaction ID and read request.
+	//Log when QUORUM read-replies are recieved for this transaction ID.
+	vector<Node> replicas = findNodes(key);
+	for(Node& node : replicas) {
+		sendMessage(&node.nodeAddress, message);
+	}
 }
 
 /**
@@ -135,9 +150,14 @@ void MP2Node::clientRead(string key){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientUpdate(string key, string value){
-	/*
-	 * Implement this
-	 */
+	Message message(g_transID++, memberNode->addr, MessageType::UPDATE, key, value);
+	
+	//TODO: Keep state of this transaction ID and update request.
+	//Log when QUORUM acknowledgements are recieved for this transaction ID.
+	vector<Node> replicas = findNodes(key);
+	for(Node& node : replicas) {
+		sendMessage(&node.nodeAddress, message);
+	}
 }
 
 /**
@@ -150,9 +170,14 @@ void MP2Node::clientUpdate(string key, string value){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientDelete(string key){
-	/*
-	 * Implement this
-	 */
+	Message message(g_transID++, memberNode->addr, MessageType::DELETE, key);
+	
+	//TODO: Keep state of this transaction ID and delete request.
+	//Log when QUORUM acknowledgements are recieved for this transaction ID.
+	vector<Node> replicas = findNodes(key);
+	for(Node& node : replicas) {
+		sendMessage(&node.nodeAddress, message);
+	}
 }
 
 /**
@@ -251,6 +276,7 @@ bool MP2Node::deletekey(string key) {
 	return result;
 }
 
+//TODO: Who calls this?
 /**
  * FUNCTION NAME: checkMessages
  *

@@ -75,6 +75,7 @@ public:
 	// handle messages from receiving queue
 	void checkMessages();
 
+	//TODO: Who calls this?
 	// coordinator dispatches messages to corresponding nodes
 	void dispatchMessages(Message message);
 
@@ -89,6 +90,9 @@ public:
 
 	// stabilization protocol - handle multiple failures
 	void stabilizationProtocol();
+
+	// send message over emulNet
+	void sendMessage(Address* toAddr, Message& message);
 
 	~MP2Node();
 };
