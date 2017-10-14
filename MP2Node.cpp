@@ -124,7 +124,7 @@ void MP2Node::clientCreate(string key, string value) {
 	Message message(++g_transID, memberNode->addr, MessageType::CREATE, key, value);
 	
 	//Keep global state for tracking QUORUMS
-	RequestResponseState requestResponseState(message, par->getcurrtime(), 0);
+	RequestResponseState requestResponseState(key, value, par->getcurrtime(), 0);
 	requestResponseStateMap.emplace(g_transID, requestResponseState);
 	
 	vector<Node> replicas = findNodes(key);
@@ -309,13 +309,14 @@ void MP2Node::checkMessages() {
 	for(auto state : requestResponseStateMap) {
 		int transID = state.first;
 		int requestTime = state.second.requestTime;
-		Message* message = state.second.message;
+		string key = state.second.key;
+		string value = state.second.value;
 
 		if(par->getcurrtime() - requestTime > RESPONSE_EXPIRY_TIME) {
 #ifdef DEBUGLOGMP2
-			log->logCreateFail(&memberNode->addr, true, transID, message->key, message->value);
+			log->logCreateFail(&memberNode->addr, true, transID, key, value);
 #endif
-			requestResponseStateMap.erase(message->transID);
+			requestResponseStateMap.erase(transID);
 		}
 	}
 	

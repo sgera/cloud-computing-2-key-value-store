@@ -26,18 +26,16 @@
 
 class RequestResponseState {
 public:
-	Message* message;
+	string key;
+	string value;
 	int requestTime;
 	int responseCount;
 
-	RequestResponseState(Message message, int requestTime, int responseCount) {
-		this->message = new Message(message);
+	RequestResponseState(string key, string value, int requestTime, int responseCount) {
+		this->key = key;
+		this->value = value;
 		this->requestTime = requestTime;
 		this->responseCount = responseCount;
-	}
-
-	~RequestResponseState() {
-		delete message;
 	}
 };
 
