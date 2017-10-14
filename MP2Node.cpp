@@ -110,7 +110,7 @@ void MP2Node::sendMessage(Address* toAddr, Message& message) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientCreate(string key, string value) {
-	Message message(g_transID++, memberNode->addr, MessageType::CREATE, key, value);
+	Message message(++g_transID, memberNode->addr, MessageType::CREATE, key, value);
 	
 	//TODO: Keep state of this transaction ID and create request.
 	//Log when QUORUM acknoledgements are recieved for this transaction ID.
@@ -130,7 +130,7 @@ void MP2Node::clientCreate(string key, string value) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientRead(string key){
-	Message message(g_transID++, memberNode->addr, MessageType::READ, key);
+	Message message(++g_transID, memberNode->addr, MessageType::READ, key);
 	
 	//TODO: Keep state of this transaction ID and read request.
 	//Log when QUORUM read-replies are recieved for this transaction ID.
@@ -150,7 +150,7 @@ void MP2Node::clientRead(string key){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientUpdate(string key, string value){
-	Message message(g_transID++, memberNode->addr, MessageType::UPDATE, key, value);
+	Message message(++g_transID, memberNode->addr, MessageType::UPDATE, key, value);
 	
 	//TODO: Keep state of this transaction ID and update request.
 	//Log when QUORUM acknowledgements are recieved for this transaction ID.
@@ -170,7 +170,7 @@ void MP2Node::clientUpdate(string key, string value){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientDelete(string key){
-	Message message(g_transID++, memberNode->addr, MessageType::DELETE, key);
+	Message message(++g_transID, memberNode->addr, MessageType::DELETE, key);
 	
 	//TODO: Keep state of this transaction ID and delete request.
 	//Log when QUORUM acknowledgements are recieved for this transaction ID.
@@ -312,6 +312,9 @@ void MP2Node::checkMessages() {
 		 */
 
 	}
+	
+	//In case create key request is received during stabilization phase, propogate the key
+	//to all replicas also.
 
 	/*
 	 * This function should also ensure all READ and UPDATE operation
@@ -397,7 +400,7 @@ void MP2Node::stabilizationProtocol() {
 		//If current node is part of find Nodes (I am the replica)
 			//Check if old HRO == new HRO - then ignore
 			//If not, 
-				//and if I am the primary replica (optional?), 
+				//and if I am the primary replica OR two new replicas (2 insert case), 
 				//and if that data is applicable for new HRO (i.e. new HRO present in find Nodes), 
 					//then transfer this data to new HRO(s). (These node(s) are new owners.) 
 					//If success, add this node(s) to HRO.
