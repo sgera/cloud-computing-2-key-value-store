@@ -45,15 +45,17 @@ void MP2Node::updateRing() {
 
 	//Step 2: Construct the ring
  	//Sort the list based on the hashCode
-	sort(curMemList.begin(), curMemList.end());
+	sort(curMemList.begin(), curMemList.end(), [](Node node1, Node node2) {
+		return node1.getHashCode() < node2.getHashCode();
+	});
 
-  //Step 3: Run the stabilization protocol IF REQUIRED
-  bool change = areMemListsEqual(curMemList, ring);
-  
-  //Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
-  if(!ht->isEmpty() && change) {
-    stabilizationProtocol();
-  }
+	//Step 3: Run the stabilization protocol IF REQUIRED
+	bool change = areMemListsEqual(curMemList, ring);
+
+	//Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
+	if(!ht->isEmpty() && change) {
+	stabilizationProtocol();
+	}
 }
 
 /**
@@ -311,6 +313,8 @@ void MP2Node::checkMessages() {
 		 * Handle the message types here
 		 */
 
+		 //If I receive a create key request in the stabilization phase, 
+		 //Send create key request to all replicas.
 	}
 	
 	//In case create key request is received during stabilization phase, propogate the key
@@ -320,6 +324,8 @@ void MP2Node::checkMessages() {
 	 * This function should also ensure all READ and UPDATE operation
 	 * get QUORUM replies
 	 */
+
+
 }
 
 /**
@@ -354,6 +360,7 @@ vector<Node> MP2Node::findNodes(string key) {
 	return addr_vec;
 }
 
+
 /**
  * FUNCTION NAME: recvLoop
  *
@@ -387,34 +394,102 @@ int MP2Node::enqueueWrapper(void *env, char *buff, int size) {
  *				Note:- "CORRECT" replicas implies that every key is replicated in its two neighboring nodes in the ring
  */
 void MP2Node::stabilizationProtocol() {
+	Node currentNode(memberNode->addr);
 	
-	//--- Handle corner cases with 1,2 nodes in the system ---
-	//If ring size is 2 (shortcut -- hacky)
-		//Transfer all data to the peer
+	//--- Handle cases with 1,2 nodes in the system ---
+	//If ring size is 1, No action
+	if(ring.size() == 1) {
+		return;
+	}
+
+	//If ring size is 2, transfer all data to the peer (shortcut -- hacky)
+	if(ring.size() == 2) {
+		for(map<string, string>::const_iterator it = ht->hashTable.begin(); it != ht->hashTable.end(); ++it) {
+			Message message(0, memberNode->addr, MessageType::CREATE, it->first, it->second);
+			Node peer = getNextNode(ring, currentNode);
+			sendMessage(&peer.nodeAddress, message);
+		}
+	}
 	
-	//If ring size is 1
-		//No action
-		
+	//Prepare new HRO
+	vector<Node> newHRO;
+	Node prevNode = getPrevNode(ring, currentNode);
+	Node prevPrevNode = getPrevNode(ring, prevNode);
+	newHRO.emplace_back();
+	newHRO.emplace_back();
+
+	//Prepare new IMR
+	vector<Node> newIMR;
+	Node nextNode = getNextNode(ring, currentNode);
+	Node nextNextNode = getNextNode(ring, nextNode);
+	newIMR.emplace_back(nextNode);
+	newIMR.emplace_back(nextNextNode);
+
 	//--- Common logic for node addition/deletion in/from the ring ---
 	//Iterate all data keys and call findNodes method().
+	for(map<string, string>::const_iterator data = ht->hashTable.begin(); data != ht->hashTable.end(); ++data) {
+		vector<Node> nodes = findNodes(data->first);
+		
+		//Find role of current node for the data (replica/owner)
+		vector<Node>::iterator itr = std::find_if(nodes.begin(), nodes.end(), [&](Node& node) {
+			return node.getHashCode() == hashFunction(memberNode->addr.getAddress());
+		});
+		int distance = std::distance(nodes.begin(), itr);
+		bool isCurrentNodeOwner = distance == 0;
+		bool isCurrentNodeReplica = distance == 1 || distance == 2;
+		bool isCurrentNodeSecondaryReplica = distance == 1;
+		bool isCurrentNodeTertiaryReplica = distance == 2;
+
 		//If current node is part of find Nodes (I am the replica)
-			//Check if old HRO == new HRO - then ignore
-			//If not, 
-				//and if I am the primary replica OR two new replicas (2 insert case), 
-				//and if that data is applicable for new HRO (i.e. new HRO present in find Nodes), 
-					//then transfer this data to new HRO(s). (These node(s) are new owners.) 
-					//If success, add this node(s) to HRO.
+		if(isCurrentNodeReplica) {
+			//Check if old HRO == new HRO, then no action
+			if(!areMemListsEqual(haveReplicasOf, newHRO)) {
+				//if I am the secondary replica <<TODO: OR there are 2 new HROs (2 insert case), 
+				if(isCurrentNodeSecondaryReplica) {
+					//and if that data is applicable for new HRO (i.e. new HRO present in find Nodes), 
+					for(Node hroNode : getIntersection(nodes, newHRO)) {
+						//then transfer this data to new HRO(s). (These node(s) are new owners.) 
+						Message message(0, memberNode->addr, MessageType::CREATE, data->first, data->second);
+						sendMessage(hroNode.getAddress(), message);
+						//If success, add this node(s) to HRO. <<Not required. Assume success.>>
+					}
+				}
+			}
+		}
+		
 		
 		//If current node is part of find Nodes (I am the owner)
-			//Check if old IMR == new IMR - then ignore
-			//If not, then transfer this data to new IMR(s). (These node(s) are prospective replica.) If success, add this node(s) to IMR.
-	
+		if(isCurrentNodeOwner) {
+			//Check if old IMR == new IMR, then no action
+			if(!areMemListsEqual(hasMyReplicas, newIMR)) {
+				//Transfer this data to new IMR(s). (These node(s) are prospective replica.) If success, add this node(s) to IMR.
+				for(Node newlyIntroducedIMRNode : getElementsInVec1NotInVec2(newIMR, haveReplicasOf)) {
+					Message message(0, memberNode->addr, MessageType::CREATE, data->first, data->second);
+					sendMessage(newlyIntroducedIMRNode.getAddress(), message);
+				}
+			}
+		}
+	}
+
 	//--- Delete unwanted data (After successfuly processing all data keys) ---
 	//Iterate all data keys and call findNodes method.
-		//If current node is not a part of find Nodes, delete that data key. [Can be done within +- affected node]
+	for(map<string, string>::const_iterator data = ht->hashTable.begin(); data != ht->hashTable.end(); ++data) {
+		vector<Node> nodes = findNodes(data->first);
+		//If current node is not a part of find Nodes, delete that data key. [<<Can be done within +- affected node>>]
+		vector<Node>::iterator itr = std::find_if(nodes.begin(), nodes.end(), [&](Node& node) {
+			return node.getHashCode() == hashFunction(memberNode->addr.getAddress());
+		});
+		int distance = std::distance(nodes.begin(), itr);
+		if(distance < 0 || distance > 2) {
+			//Delete the key
+			ht->deleteKey(data->first);
+		}
+	}
 
 
 	//--- Update new vectors (HRO, IMR) to the global ones. ---
+	hasMyReplicas = newIMR;
+	haveReplicasOf = newHRO;
 }
 
 bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2) {
@@ -439,4 +514,105 @@ bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2) {
   }
   
   return true;
+}
+
+/**
+ * FUNCTION NAME: getNodeIndexInVector
+ *
+ * DESCRIPTION: Returns the index of input node present in the ring
+ */
+int MP2Node::getNodeIndexInVector(vector<Node>& ring, Node& currNode) {
+
+	if(ring.size() == 0) {
+		return -1;
+	}
+
+	int i = 0;
+	while(i < ring.size() && ring[i].getHashCode() != currNode.getHashCode()) {
+		i++;
+	}
+
+	//Current node must be present in the ring
+	//assert(i != ring.size());
+		
+	return i;
+}
+
+/**
+ * FUNCTION NAME: getNextNode
+ *
+ * DESCRIPTION: Returns the node present next to the input node in the ring
+ */
+Node MP2Node::getNextNode(vector<Node>& ring, Node& currNode) {
+	if(ring.size() <= 1) {
+		assert(false);
+		return Node();
+	}
+	 
+	if (ring.size() >= 2) {	
+		int i = getNodeIndexInVector(ring, currNode);
+		return ring.at((i+1) % ring.size());
+	}
+}
+
+/**
+ * FUNCTION NAME: getPrevNode
+ *
+ * DESCRIPTION: Returns the node present previous to the input node in the ring
+ */
+Node MP2Node::getPrevNode(vector<Node>& ring, Node& currNode) {
+	if(ring.size() <= 1) {
+		assert(false);
+		return Node();
+	}
+	 
+	if (ring.size() >= 2) {	
+		int i = getNodeIndexInVector(ring, currNode);
+		return ring.at((i-1) % ring.size());
+	}
+}
+
+/**
+ * FUNCTION NAME: compareNodeVectors
+ *
+ * DESCRIPTION: Returns whether two vectors containing Node are equal
+ */
+bool MP2Node::compareNodeVectors(vector<Node> vec1, vector<Node> vec2) {
+	return std::equal(vec1.begin(), vec1.end(), vec2.begin(), [](Node& node1, Node& node2){
+		return node1.getHashCode() == node2.getHashCode();
+	});
+}
+
+/**
+ * FUNCTION NAME: getIntersection
+ *
+ * DESCRIPTION: Returns intersection of two vectors
+ */
+vector<Node> MP2Node::getIntersection(vector<Node> v1, vector<Node> v2) {
+
+    vector<Node> v3;
+
+	sort(v1.begin(), v1.end(), [](const Node& node1, const Node& node2) {
+		return const_cast<Node&>(node1).getHashCode() < const_cast<Node&>(node2).getHashCode();
+	});
+
+	sort(v2.begin(), v2.end(), [](const Node& node1, const Node& node2) {
+		return const_cast<Node&>(node1).getHashCode() < const_cast<Node&>(node2).getHashCode();
+	});
+    
+    set_intersection(v1.begin(),v1.end(),v2.begin(),v2.end(),back_inserter(v3), [](Node& node1, Node& node2) {
+		return node1.getHashCode() == node2.getHashCode();
+	});
+
+    return v3;
+}
+
+vector<Node> MP2Node::getElementsInVec1NotInVec2(vector<Node> vec1, vector<Node> vec2) {
+	
+	std::vector<Node> vec3;
+	std::remove_copy_if(vec1.begin(), vec1.end(), std::back_inserter(vec3), [&](const Node& arg) {
+		return getNodeIndexInVector(vec2, const_cast<Node&>(arg)) == vec2.size();
+	});
+
+	return vec3;
 }

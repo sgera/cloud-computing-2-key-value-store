@@ -95,6 +95,14 @@ public:
 	void sendMessage(Address* toAddr, Message& message);
 
 	~MP2Node();
+
+	private:
+	int getNodeIndexInVector(vector<Node>& ring, Node& currNode);
+	Node getNextNode(vector<Node>& ring, Node& currNode);
+	Node getPrevNode(vector<Node>& ring, Node& currNode);
+	bool compareNodeVectors(vector<Node> vec1, vector<Node> vec2);
+	vector<Node> getIntersection(vector<Node> v1, vector<Node> v2);
+	vector<Node> getElementsInVec1NotInVec2(vector<Node> vec1, vector<Node> vec2);
 };
 
 #endif /* MP2NODE_H_ */
