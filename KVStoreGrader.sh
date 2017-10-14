@@ -87,6 +87,9 @@ create_count=`grep -i "${CREATE_OPERATION}" dbg.log | wc -l`
 create_success_count=`grep -i "${CREATE_SUCCESS}" dbg.log | wc -l`
 expected_count=$(( ${create_count} * ${RFPLUSONE} ))
 
+echo "create_success_count" ${create_success_count}
+echo "expected_count" ${expected_count}
+
 if [ ${create_success_count} -ne ${expected_count} ]
 then 
 	CREATE_TEST_STATUS="${FAILURE}"

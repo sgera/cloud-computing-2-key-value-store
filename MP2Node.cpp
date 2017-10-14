@@ -5,14 +5,16 @@
  **********************************/
 #include "MP2Node.h"
 
+static int g_transID1 = 0;
+
 //Forward decl
 bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2); 
 
-void printNodeVector(const vector<Node>& vec, string vecName) {
+void MP2Node::printNodeVector(const vector<Node>& vec, string vecName) {
 #ifdef DEBUGLOGMP2
 	for(const Node& node : vec) {
-		std::cout << "Printing vector: " + vecName << endl;
-		std::cout << "Node " + const_cast<Node&>(node).getAddress()->getAddress() << "\t";
+		log->LOG(&memberNode->addr, ("Printing vector: " + vecName + "\n").c_str());
+		log->LOG(&memberNode->addr, ("Node " + const_cast<Node&>(node).getAddress()->getAddress() + "\t").c_str());
 	}
 #endif
 }
@@ -58,12 +60,15 @@ void MP2Node::updateRing() {
 		return node1.getHashCode() < node2.getHashCode();
 	});
 
+	//printNodeVector(ring, "Ring");
+
 	//Step 3: Run the stabilization protocol IF REQUIRED
-	bool change = areMemListsEqual(curMemList, ring);
+	bool change = !areMemListsEqual(curMemList, ring);
+	ring = curMemList;
 
 	//Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
 	if(!ht->isEmpty() && change) {
-		//stabilizationProtocol();
+		stabilizationProtocol();
 	}
 }
 
@@ -107,6 +112,7 @@ size_t MP2Node::hashFunction(string key) {
 }
 
 void MP2Node::sendMessage(Address* toAddr, Message& message) {
+	std::cout<<"Sending Message: " + message.key;
 	string data = message.toString();
 	emulNet->ENsend(&memberNode->addr, toAddr, data);
 }
@@ -121,11 +127,12 @@ void MP2Node::sendMessage(Address* toAddr, Message& message) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientCreate(string key, string value) {
-	Message message(++g_transID, memberNode->addr, MessageType::CREATE, key, value);
+	Message message(++g_transID1, memberNode->addr, MessageType::CREATE, key, value);
 	
+	log->LOG(&memberNode->addr, ("Transaction ID: " + std::to_string(g_transID1)).c_str());
 	//Keep global state for tracking QUORUMS
 	RequestResponseState requestResponseState(key, value, par->getcurrtime(), 0);
-	requestResponseStateMap.emplace(g_transID, requestResponseState);
+	requestResponseStateMap.emplace(g_transID1, requestResponseState);
 	
 	vector<Node> replicas = findNodes(key);
 	for(Node& node : replicas) {
@@ -143,7 +150,7 @@ void MP2Node::clientCreate(string key, string value) {
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientRead(string key){
-	Message message(++g_transID, memberNode->addr, MessageType::READ, key);
+	Message message(++g_transID1, memberNode->addr, MessageType::READ, key);
 	
 	//TODO: Keep state of this transaction ID and read request.
 	//Log when QUORUM read-replies are recieved for this transaction ID.
@@ -163,7 +170,7 @@ void MP2Node::clientRead(string key){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientUpdate(string key, string value){
-	Message message(++g_transID, memberNode->addr, MessageType::UPDATE, key, value);
+	Message message(++g_transID1, memberNode->addr, MessageType::UPDATE, key, value);
 	
 	//TODO: Keep state of this transaction ID and update request.
 	//Log when QUORUM acknowledgements are recieved for this transaction ID.
@@ -183,7 +190,7 @@ void MP2Node::clientUpdate(string key, string value){
  * 				3) Sends a message to the replica
  */
 void MP2Node::clientDelete(string key){
-	Message message(++g_transID, memberNode->addr, MessageType::DELETE, key);
+	Message message(++g_transID1, memberNode->addr, MessageType::DELETE, key);
 	
 	//TODO: Keep state of this transaction ID and delete request.
 	//Log when QUORUM acknowledgements are recieved for this transaction ID.
@@ -204,16 +211,6 @@ void MP2Node::clientDelete(string key){
 bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
 	//TODO: Find use of replicaType
 	bool result = ht->create(key, value);
-
-#ifdef DEBUGLOGMP2
-	if(result) {
-		log->logCreateSuccess(&memberNode->addr, false, 0, key, value);
-	}
-	else {
-		log->logCreateFail(&memberNode->addr, false, 0, key, value);
-	}
-#endif
-
 	return result;
 }
 
@@ -305,7 +302,7 @@ void MP2Node::checkMessages() {
 	char * data;
 	int size;
 
-	//Go through all requests and log/delete expired requests
+	//Go through all requests and log/delete expired requests << TODO: This cannot be create request only >>>
 	for(auto state : requestResponseStateMap) {
 		int transID = state.first;
 		int requestTime = state.second.requestTime;
@@ -330,26 +327,39 @@ void MP2Node::checkMessages() {
 		string strMessage(data, data + size);
 		Message message(strMessage);
 
-		//TODO: Figure out how to NOT log stabilization create key requests
 		//Handle the message types here
 		switch(message.type) {
 		
-		case MessageType::CREATE:
-			createKeyValue(message.key, message.value, ReplicaType::SECONDARY);
+		case MessageType::CREATE: 
+		{
+			bool result = createKeyValue(message.key, message.value, ReplicaType::SECONDARY);
 			//Reply if this client-initiated
 			if(message.transID != 0) {
-				Message message(message.transID, memberNode->addr, MessageType::REPLY, true);
+
+#ifdef DEBUGLOGMP2
+				if(result) {
+					log->logCreateSuccess(&memberNode->addr, false, message.transID, message.key, message.value);
+				}
+				else {
+					log->logCreateFail(&memberNode->addr, false, message.transID, message.key, message.value);
+				}
+#endif
+
+				Message message(message.transID, memberNode->addr, MessageType::REPLY, result);
 				sendMessage(&message.fromAddr, message);
 			}
 		break;
-			
+		}
 		case MessageType::REPLY: 
+			log->LOG(&memberNode->addr, ("Received reply for transID: " + std::to_string(message.transID)).c_str());
+			log->LOG(&memberNode->addr, ("Message: " + strMessage).c_str());
 			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
 			if(itr != requestResponseStateMap.end()) {
 				RequestResponseState state = itr->second;
 				int requestTime = state.requestTime;
 				int responseCount = state.responseCount + 1;
 
+				log->LOG(&memberNode->addr, ("Received reply for transID: " + std::to_string(message.transID)).c_str());
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
 				//If QUORUM, log success message and remove entry from global state
 				if(responseCount >= 2) {
@@ -360,6 +370,7 @@ void MP2Node::checkMessages() {
 				}
 			}
 			else {
+				log->LOG(&memberNode->addr, ("No processing required for key: " + message.key).c_str());
 				//No processing required
 			}
 		break;

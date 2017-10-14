@@ -19,9 +19,9 @@
 #include "Message.h"
 #include "Queue.h"
 
-#define DEBUGLOGMP2
+#define DEBUGLOGMP2 1
 
-#define RESPONSE_EXPIRY_TIME 5
+#define RESPONSE_EXPIRY_TIME 30
 
 
 class RequestResponseState {
@@ -123,6 +123,7 @@ public:
 	bool compareNodeVectors(vector<Node> vec1, vector<Node> vec2);
 	vector<Node> getIntersection(vector<Node> v1, vector<Node> v2);
 	vector<Node> getElementsInVec1NotInVec2(vector<Node> vec1, vector<Node> vec2);
+	void printNodeVector(const vector<Node>& vec, string vecName);
 };
 
 #endif /* MP2NODE_H_ */
