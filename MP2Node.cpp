@@ -8,6 +8,15 @@
 //Forward decl
 bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2); 
 
+void printNodeVector(const vector<Node>& vec, string vecName) {
+#ifdef DEBUGLOGMP2
+	for(const Node& node : vec) {
+		std::cout << "Printing vector: " + vecName << endl;
+		std::cout << "Node " + const_cast<Node&>(node).getAddress()->getAddress() << "\t";
+	}
+#endif
+}
+
 /**
  * constructor
  */
@@ -54,7 +63,7 @@ void MP2Node::updateRing() {
 
 	//Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
 	if(!ht->isEmpty() && change) {
-	stabilizationProtocol();
+		//stabilizationProtocol();
 	}
 }
 
@@ -114,8 +123,10 @@ void MP2Node::sendMessage(Address* toAddr, Message& message) {
 void MP2Node::clientCreate(string key, string value) {
 	Message message(++g_transID, memberNode->addr, MessageType::CREATE, key, value);
 	
-	//TODO: Keep state of this transaction ID and create request.
-	//Log when QUORUM acknoledgements are recieved for this transaction ID.
+	//Keep global state for tracking QUORUMS
+	RequestResponseState requestResponseState(message, par->getcurrtime(), 0);
+	requestResponseStateMap.emplace(g_transID, requestResponseState);
+	
 	vector<Node> replicas = findNodes(key);
 	for(Node& node : replicas) {
 		sendMessage(&node.nodeAddress, message);
@@ -199,7 +210,7 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
 		log->logCreateSuccess(&memberNode->addr, false, 0, key, value);
 	}
 	else {
-		log->logUpdateFail(&memberNode->addr, false, 0, key, value);
+		log->logCreateFail(&memberNode->addr, false, 0, key, value);
 	}
 #endif
 
@@ -294,38 +305,73 @@ void MP2Node::checkMessages() {
 	char * data;
 	int size;
 
-	/*
-	 * Declare your local variables here
-	 */
+	//Go through all requests and log/delete expired requests
+	for(auto state : requestResponseStateMap) {
+		int transID = state.first;
+		int requestTime = state.second.requestTime;
+		Message* message = state.second.message;
 
+		if(par->getcurrtime() - requestTime > RESPONSE_EXPIRY_TIME) {
+#ifdef DEBUGLOGMP2
+			log->logCreateFail(&memberNode->addr, true, transID, message->key, message->value);
+#endif
+			requestResponseStateMap.erase(message->transID);
+		}
+	}
+	
 	// dequeue all messages and handle them
 	while ( !memberNode->mp2q.empty() ) {
-		/*
-		 * Pop a message from the queue
-		 */
+	
 		data = (char *)memberNode->mp2q.front().elt;
 		size = memberNode->mp2q.front().size;
 		memberNode->mp2q.pop();
 
-		string message(data, data + size);
+		string strMessage(data, data + size);
+		Message message(strMessage);
 
-		/*
-		 * Handle the message types here
-		 */
+		//TODO: Figure out how to NOT log stabilization create key requests
+		//Handle the message types here
+		switch(message.type) {
+		
+		case MessageType::CREATE:
+			createKeyValue(message.key, message.value, ReplicaType::SECONDARY);
+			//Reply if this client-initiated
+			if(message.transID != 0) {
+				Message message(message.transID, memberNode->addr, MessageType::REPLY, true);
+				sendMessage(&message.fromAddr, message);
+			}
+		break;
+			
+		case MessageType::REPLY: 
+			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
+			if(itr != requestResponseStateMap.end()) {
+				RequestResponseState state = itr->second;
+				int requestTime = state.requestTime;
+				int responseCount = state.responseCount + 1;
 
-		 //If I receive a create key request in the stabilization phase, 
-		 //Send create key request to all replicas.
+				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
+				//If QUORUM, log success message and remove entry from global state
+				if(responseCount >= 2) {
+#ifdef DEBUGLOGMP2	
+					log->logCreateSuccess(&memberNode->addr, true, message.transID, message.key, message.value);
+#endif
+					requestResponseStateMap.erase(message.transID);
+				}
+			}
+			else {
+				//No processing required
+			}
+		break;
+		};
+
+		//If I receive a create key request in the stabilization phase, 
+		//Send create key request to all replicas.
 	}
-	
-	//In case create key request is received during stabilization phase, propogate the key
-	//to all replicas also.
 
 	/*
 	 * This function should also ensure all READ and UPDATE operation
 	 * get QUORUM replies
 	 */
-
-
 }
 
 /**

@@ -21,6 +21,26 @@
 
 #define DEBUGLOGMP2
 
+#define RESPONSE_EXPIRY_TIME 5
+
+
+class RequestResponseState {
+public:
+	Message* message;
+	int requestTime;
+	int responseCount;
+
+	RequestResponseState(Message message, int requestTime, int responseCount) {
+		this->message = new Message(message);
+		this->requestTime = requestTime;
+		this->responseCount = responseCount;
+	}
+
+	~RequestResponseState() {
+		delete message;
+	}
+};
+
 /**
  * CLASS NAME: MP2Node
  *
@@ -49,6 +69,8 @@ private:
 	EmulNet * emulNet;
 	// Object of Log
 	Log * log;
+	//transID, RequestResponseState)
+	map<int, RequestResponseState> requestResponseStateMap;
 
 public:
 	MP2Node(Member *memberNode, Params *par, EmulNet *emulNet, Log *log, Address *addressOfMember);

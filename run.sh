@@ -21,7 +21,7 @@ make clean > /dev/null 2>&1
 make > /dev/null 2>&1 
 
 echo "CREATE test"
-./Application testcases/create.conf > /dev/null 2>&1
+./Application testcases/create.conf > /projects/mp2/cloud-computing-2-key-value-store/create_error.log 2>&1
 cp dbg.log ../../dbg.0.log
 echo "DELETE test" 
 ./Application testcases/delete.conf > /dev/null 2>&1
