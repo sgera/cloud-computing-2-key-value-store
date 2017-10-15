@@ -129,8 +129,6 @@ void MP2Node::sendMessage(Address* toAddr, Message& message) {
 void MP2Node::clientCreate(string key, string value) {
 	Message message(++g_transID1, memberNode->addr, MessageType::CREATE, key, value);
 	
-	//log->LOG(&memberNode->addr, ("Transaction ID: " + std::to_string(g_transID1)).c_str());
-	//Keep global state for tracking QUORUMS
 	RequestResponseState requestResponseState(key, value, MessageType::CREATE, par->getcurrtime(), 0);
 	requestResponseStateMap.emplace(g_transID1, requestResponseState);
 	
@@ -173,8 +171,9 @@ void MP2Node::clientRead(string key){
 void MP2Node::clientUpdate(string key, string value){
 	Message message(++g_transID1, memberNode->addr, MessageType::UPDATE, key, value);
 	
-	//TODO: Keep state of this transaction ID and update request.
-	//Log when QUORUM acknowledgements are recieved for this transaction ID.
+	RequestResponseState requestResponseState(key, value, MessageType::UPDATE, par->getcurrtime(), 0);
+	requestResponseStateMap.emplace(g_transID1, requestResponseState);
+	
 	vector<Node> replicas = findNodes(key);
 	for(Node& node : replicas) {
 		sendMessage(&node.nodeAddress, message);
@@ -193,8 +192,9 @@ void MP2Node::clientUpdate(string key, string value){
 void MP2Node::clientDelete(string key){
 	Message message(++g_transID1, memberNode->addr, MessageType::DELETE, key);
 	
-	//TODO: Keep state of this transaction ID and delete request.
-	//Log when QUORUM acknowledgements are recieved for this transaction ID.
+	RequestResponseState requestResponseState(key, "", MessageType::DELETE, par->getcurrtime(), 0);
+	requestResponseStateMap.emplace(g_transID1, requestResponseState);
+	
 	vector<Node> replicas = findNodes(key);
 	for(Node& node : replicas) {
 		sendMessage(&node.nodeAddress, message);
@@ -224,7 +224,6 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
  * 			    2) Return value
  */
 string MP2Node::readKey(string key) {
-
 	string value = ht->read(key);
 	return value;
 }
@@ -240,16 +239,6 @@ string MP2Node::readKey(string key) {
 bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
 	//TODO: Find use of replicaType
 	bool result = ht->update(key, value);
-
-#ifdef DEBUGLOGMP2
-	if(result) {
-		log->logUpdateSuccess(&memberNode->addr, false, 0, key, value);
-	}
-	else {
-		log->logUpdateFail(&memberNode->addr, false, 0, key, value);
-	}
-#endif
-
 	return result;
 }
 
@@ -262,18 +251,7 @@ bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
  * 				2) Return true or false based on success or failure
  */
 bool MP2Node::deletekey(string key) {
-	
 	bool result = ht->deleteKey(key);
-
-#ifdef DEBUGLOGMP2
-	if(result) {
-		log->logDeleteSuccess(&memberNode->addr, false, 0, key);
-	}
-	else {
-		log->logDeleteFail(&memberNode->addr, false, 0, key);
-	}
-#endif
-
 	return result;
 }
 
@@ -375,6 +353,48 @@ void MP2Node::checkMessages() {
 				}
 				else {
 					log->logReadSuccess(&memberNode->addr, false, message.transID, message.key, value);
+				}
+#endif
+			}
+			break;
+		}
+		case MessageType::UPDATE: 
+		{
+			log->LOG(&memberNode->addr, ("Received Update message: " + message.toString()).c_str());
+			bool result = updateKeyValue(message.key, message.value, ReplicaType::SECONDARY);
+			
+			//Reply if this client-initiated
+			if(message.transID != 0) {
+				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
+				sendMessage(&message.fromAddr, reply);
+
+#ifdef DEBUGLOGMP2
+				if(result) {
+					log->logUpdateSuccess(&memberNode->addr, false, message.transID, message.key, message.value);
+				}
+				else {
+					log->logUpdateFail(&memberNode->addr, false, message.transID, message.key, message.value);
+				}
+#endif
+			}
+			break;
+		}
+		case MessageType::DELETE: 
+		{
+			log->LOG(&memberNode->addr, ("Received Delete message: " + message.toString()).c_str());
+			bool result = deletekey(message.key);
+			
+			//Reply if this client-initiated
+			if(message.transID != 0) {
+				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
+				sendMessage(&message.fromAddr, reply);
+
+#ifdef DEBUGLOGMP2
+				if(result) {
+					log->logDeleteSuccess(&memberNode->addr, false, message.transID, message.key);
+				}
+				else {
+					log->logDeleteFail(&memberNode->addr, false, message.transID, message.key);
 				}
 #endif
 			}
