@@ -112,7 +112,7 @@ size_t MP2Node::hashFunction(string key) {
 }
 
 void MP2Node::sendMessage(Address* toAddr, Message& message) {
-	log->LOG(&memberNode->addr, ("Sending Message: " + message.toString()).c_str());
+	log->LOG(&memberNode->addr, ("Sending Message: " + message.toString() + ", to: " + toAddr->getAddress()).c_str());
 	string data = message.toString();
 	emulNet->ENsend(&memberNode->addr, toAddr, data);
 }
@@ -341,10 +341,11 @@ void MP2Node::checkMessages() {
 		{
 			log->LOG(&memberNode->addr, ("Received Read message: " + message.toString()).c_str());
 			string value = readKey(message.key);
-			
+			log->LOG(&memberNode->addr, ("Key = " + message.key + ", Value = " + value).c_str());
+
 			//Reply if this client-initiated
 			if(message.transID != 0) {
-				Message reply(message.transID, memberNode->addr, MessageType::READREPLY, value);
+				Message reply(message.transID, memberNode->addr, value);
 				sendMessage(&message.fromAddr, reply);
 
 #ifdef DEBUGLOGMP2
@@ -448,6 +449,9 @@ void MP2Node::checkMessages() {
 				//Incr response count if operation successful
 				if(!message.value.empty()) { 
 					itr->second.responseCount++; 	
+				}
+				else {
+					log->LOG(&memberNode->addr, "Empty read-reply value");	
 				}
 
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
