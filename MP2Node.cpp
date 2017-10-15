@@ -12,9 +12,9 @@ bool areMemListsEqual(vector<Node>& vec1, vector<Node>& vec2);
 
 void MP2Node::printNodeVector(const vector<Node>& vec, string vecName) {
 #ifdef DEBUGLOGMP2
+	log->LOG(&memberNode->addr, ("Printing vector: " + vecName).c_str());
 	for(const Node& node : vec) {
-		log->LOG(&memberNode->addr, ("Printing vector: " + vecName + "\n").c_str());
-		log->LOG(&memberNode->addr, ("Node " + const_cast<Node&>(node).getAddress()->getAddress() + "\t").c_str());
+		log->LOG(&memberNode->addr, ("Node " + const_cast<Node&>(node).getAddress()->getAddress()).c_str());
 	}
 #endif
 }
@@ -60,14 +60,14 @@ void MP2Node::updateRing() {
 		return node1.getHashCode() < node2.getHashCode();
 	});
 
-	//printNodeVector(ring, "Ring");
-
 	//Step 3: Run the stabilization protocol IF REQUIRED
 	bool change = !areMemListsEqual(curMemList, ring);
 	ring = curMemList;
 
 	//Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
-	if(!ht->isEmpty() && change) {
+	//if(!ht->isEmpty() && change) {
+	if(change) {
+		printNodeVector(ring, "Ring");
 		stabilizationProtocol();
 	}
 }
@@ -112,7 +112,9 @@ size_t MP2Node::hashFunction(string key) {
 }
 
 void MP2Node::sendMessage(Address* toAddr, Message& message) {
+#ifdef DEBUGLOGMP2
 	log->LOG(&memberNode->addr, ("Sending Message: " + message.toString() + ", to: " + toAddr->getAddress()).c_str());
+#endif
 	string data = message.toString();
 	emulNet->ENsend(&memberNode->addr, toAddr, data);
 }
@@ -279,7 +281,6 @@ void MP2Node::checkMessages() {
 		string value = state.second.value;
 
 		if(par->getcurrtime() - requestTime > RESPONSE_EXPIRY_TIME) {
-#ifdef DEBUGLOGMP2
 			switch(state.second.requestType) {
 				case MessageType::CREATE:
 					log->logCreateFail(&memberNode->addr, true, transID, key, value);
@@ -297,7 +298,6 @@ void MP2Node::checkMessages() {
 					log->logReadFail(&memberNode->addr, true, transID, key);
 					break;
 			};
-#endif
 			requestResponseStateMap.erase(transID);
 		}
 	}
@@ -317,8 +317,10 @@ void MP2Node::checkMessages() {
 		
 		case MessageType::CREATE: 
 		{
+#ifdef DEBUGLOGMP2
 			//log->LOG(&memberNode->addr, ("Received create message for transID: " + std::to_string(message.transID)).c_str());
 			log->LOG(&memberNode->addr, ("Received Create message: " + message.toString()).c_str());
+#endif
 			bool result = createKeyValue(message.key, message.value, ReplicaType::SECONDARY);
 			
 			//Reply if this client-initiated
@@ -326,42 +328,57 @@ void MP2Node::checkMessages() {
 				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
 				sendMessage(&message.fromAddr, reply);
 
-#ifdef DEBUGLOGMP2
 				if(result) {
 					log->logCreateSuccess(&memberNode->addr, false, message.transID, message.key, message.value);
 				}
 				else {
 					log->logCreateFail(&memberNode->addr, false, message.transID, message.key, message.value);
 				}
-#endif
+			} 
+			else {
+				vector<Node> nodes = findNodes(message.key);
+				bool currNodeOwner = nodes[0].getHashCode() == Node(memberNode->addr).getHashCode();
+				if(currNodeOwner) {
+					//If I receive a create key request in the stabilization phase, 
+					//Send create key request to all replicas.
+					Message createMessage(0, memberNode->addr, MessageType::CREATE, message.key, message.value);
+					for(Node& node : hasMyReplicas) {
+						sendMessage(&message.fromAddr, createMessage);
+					}
+				}
 			}
 		break;
 		}
 		case MessageType::READ: 
 		{
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Received Read message: " + message.toString()).c_str());
+#endif
 			string value = readKey(message.key);
+
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Key = " + message.key + ", Value = " + value).c_str());
+#endif
 
 			//Reply if this client-initiated
 			if(message.transID != 0) {
 				Message reply(message.transID, memberNode->addr, value);
 				sendMessage(&message.fromAddr, reply);
 
-#ifdef DEBUGLOGMP2
 				if(value.empty()) {
 					log->logReadFail(&memberNode->addr, false, message.transID, message.key);
 				}
 				else {
 					log->logReadSuccess(&memberNode->addr, false, message.transID, message.key, value);
 				}
-#endif
 			}
 			break;
 		}
 		case MessageType::UPDATE: 
 		{
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Received Update message: " + message.toString()).c_str());
+#endif
 			bool result = updateKeyValue(message.key, message.value, ReplicaType::SECONDARY);
 			
 			//Reply if this client-initiated
@@ -369,20 +386,20 @@ void MP2Node::checkMessages() {
 				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
 				sendMessage(&message.fromAddr, reply);
 
-#ifdef DEBUGLOGMP2
 				if(result) {
 					log->logUpdateSuccess(&memberNode->addr, false, message.transID, message.key, message.value);
 				}
 				else {
 					log->logUpdateFail(&memberNode->addr, false, message.transID, message.key, message.value);
 				}
-#endif
 			}
 			break;
 		}
 		case MessageType::DELETE: 
 		{
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Received Delete message: " + message.toString()).c_str());
+#endif
 			bool result = deletekey(message.key);
 			
 			//Reply if this client-initiated
@@ -390,20 +407,20 @@ void MP2Node::checkMessages() {
 				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
 				sendMessage(&message.fromAddr, reply);
 
-#ifdef DEBUGLOGMP2
 				if(result) {
 					log->logDeleteSuccess(&memberNode->addr, false, message.transID, message.key);
 				}
 				else {
 					log->logDeleteFail(&memberNode->addr, false, message.transID, message.key);
 				}
-#endif
 			}
 			break;
 		}
 		case MessageType::REPLY: 
 		{
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Received reply message: " + strMessage).c_str());
+#endif
 			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
 			if(itr != requestResponseStateMap.end()) {
 				//Incr response count if operation successful
@@ -414,7 +431,6 @@ void MP2Node::checkMessages() {
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
 				//If QUORUM, log success message and remove entry from global state
 				if(itr->second.responseCount >= 2) {
-#ifdef DEBUGLOGMP2	
 					switch(itr->second.requestType) {
 
 						case MessageType::CREATE:
@@ -430,12 +446,13 @@ void MP2Node::checkMessages() {
 							break;
 					};
 					
-#endif
 					requestResponseStateMap.erase(message.transID);
 				}
 			}
 			else {
+#ifdef DEBUGLOGMP2
 				log->LOG(&memberNode->addr, ("No processing required for key: " + message.key).c_str());
+#endif
 				//No processing required
 			}
 			break;
@@ -443,7 +460,9 @@ void MP2Node::checkMessages() {
 		
 		case MessageType::READREPLY:
 		{
+#ifdef DEBUGLOGMP2
 			log->LOG(&memberNode->addr, ("Received read-reply message: " + strMessage).c_str());
+#endif
 			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
 			if(itr != requestResponseStateMap.end()) {
 				//Incr response count if operation successful
@@ -451,28 +470,27 @@ void MP2Node::checkMessages() {
 					itr->second.responseCount++; 	
 				}
 				else {
-					log->LOG(&memberNode->addr, "Empty read-reply value");	
+#ifdef DEBUGLOGMP2
+					//log->LOG(&memberNode->addr, "Empty read-reply value");	
+#endif
 				}
 
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
 				//If QUORUM, log success message and remove entry from global state
 				if(itr->second.responseCount >= 2) {
-#ifdef DEBUGLOGMP2	
 					log->logReadSuccess(&memberNode->addr, true, message.transID, itr->second.key, message.value);
-#endif
 					requestResponseStateMap.erase(message.transID);
 				}
 			}
 			else {
-				log->LOG(&memberNode->addr, ("No read-reply processing required for key: " + message.key).c_str());
+#ifdef DEBUGLOGMP2
+				//log->LOG(&memberNode->addr, ("No read-reply processing required for key: " + message.key).c_str());
+#endif
 			}
 		break;
 		}
 
 		};
-
-		//If I receive a create key request in the stabilization phase, 
-		//Send create key request to all replicas.
 	}
 
 	/*
@@ -568,8 +586,9 @@ void MP2Node::stabilizationProtocol() {
 	vector<Node> newHRO;
 	Node prevNode = getPrevNode(ring, currentNode);
 	Node prevPrevNode = getPrevNode(ring, prevNode);
-	newHRO.emplace_back();
-	newHRO.emplace_back();
+	newHRO.emplace_back(prevNode);
+	newHRO.emplace_back(prevPrevNode);
+	//printNodeVector(newHRO, "newHRO");
 
 	//Prepare new IMR
 	vector<Node> newIMR;
@@ -577,6 +596,7 @@ void MP2Node::stabilizationProtocol() {
 	Node nextNextNode = getNextNode(ring, nextNode);
 	newIMR.emplace_back(nextNode);
 	newIMR.emplace_back(nextNextNode);
+	//printNodeVector(newIMR, "newIMR");
 
 	//--- Common logic for node addition/deletion in/from the ring ---
 	//Iterate all data keys and call findNodes method().
@@ -585,10 +605,10 @@ void MP2Node::stabilizationProtocol() {
 		
 		//Find role of current node for the data (replica/owner)
 		vector<Node>::iterator itr = std::find_if(nodes.begin(), nodes.end(), [&](Node& node) {
-			return node.getHashCode() == hashFunction(memberNode->addr.getAddress());
+			return node.getHashCode() == Node(memberNode->addr).getHashCode();
 		});
 		int distance = std::distance(nodes.begin(), itr);
-		bool isCurrentNodeOwner = distance == 0;
+		bool isCurrentNodeOwner = (itr == nodes.begin());
 		bool isCurrentNodeReplica = distance == 1 || distance == 2;
 		bool isCurrentNodeSecondaryReplica = distance == 1;
 		bool isCurrentNodeTertiaryReplica = distance == 2;
@@ -616,7 +636,7 @@ void MP2Node::stabilizationProtocol() {
 			//Check if old IMR == new IMR, then no action
 			if(!areMemListsEqual(hasMyReplicas, newIMR)) {
 				//Transfer this data to new IMR(s). (These node(s) are prospective replica.) If success, add this node(s) to IMR.
-				for(Node newlyIntroducedIMRNode : getElementsInVec1NotInVec2(newIMR, haveReplicasOf)) {
+				for(Node newlyIntroducedIMRNode : getElementsInVec1NotInVec2(newIMR, hasMyReplicas)) {
 					Message message(0, memberNode->addr, MessageType::CREATE, data->first, data->second);
 					sendMessage(newlyIntroducedIMRNode.getAddress(), message);
 				}
@@ -630,11 +650,14 @@ void MP2Node::stabilizationProtocol() {
 		vector<Node> nodes = findNodes(data->first);
 		//If current node is not a part of find Nodes, delete that data key. [<<Can be done within +- affected node>>]
 		vector<Node>::iterator itr = std::find_if(nodes.begin(), nodes.end(), [&](Node& node) {
-			return node.getHashCode() == hashFunction(memberNode->addr.getAddress());
+			return node.getHashCode() == Node(memberNode->addr).getHashCode();
 		});
-		int distance = std::distance(nodes.begin(), itr);
-		if(distance < 0 || distance > 2) {
+		if(itr == nodes.end()) {
 			//Delete the key
+#ifdef DEBUGLOGMP2
+			//printNodeVector(nodes, "New Key Owners");
+			//log->LOG(&memberNode->addr, ("Deleting stale key: " + data->first).c_str());
+#endif
 			ht->deleteKey(data->first);
 		}
 	}
@@ -702,10 +725,8 @@ Node MP2Node::getNextNode(vector<Node>& ring, Node& currNode) {
 		return Node();
 	}
 	 
-	if (ring.size() >= 2) {	
-		int i = getNodeIndexInVector(ring, currNode);
-		return ring.at((i+1) % ring.size());
-	}
+	int i = getNodeIndexInVector(ring, currNode);
+	return ring.at((i+1) % ring.size());
 }
 
 /**
@@ -719,10 +740,8 @@ Node MP2Node::getPrevNode(vector<Node>& ring, Node& currNode) {
 		return Node();
 	}
 	 
-	if (ring.size() >= 2) {	
-		int i = getNodeIndexInVector(ring, currNode);
-		return ring.at((i-1) % ring.size());
-	}
+	int i = getNodeIndexInVector(ring, currNode);
+	return ring.at(( i + ring.size() - 1) % ring.size());
 }
 
 /**
@@ -761,11 +780,18 @@ vector<Node> MP2Node::getIntersection(vector<Node> v1, vector<Node> v2) {
 }
 
 vector<Node> MP2Node::getElementsInVec1NotInVec2(vector<Node> vec1, vector<Node> vec2) {
-	
 	std::vector<Node> vec3;
 	std::remove_copy_if(vec1.begin(), vec1.end(), std::back_inserter(vec3), [&](const Node& arg) {
-		return getNodeIndexInVector(vec2, const_cast<Node&>(arg)) == vec2.size();
+		return getNodeIndexInVector(vec2, const_cast<Node&>(arg)) != vec2.size();
 	});
 
+	static bool printOnce = true;
+	if(printOnce) {
+		printNodeVector(vec1, "vec1");
+		printNodeVector(vec2, "vec2");
+		printNodeVector(vec3, "getElementsInVec1NotInVec2");
+		printOnce = false;
+	}
+	
 	return vec3;
 }
