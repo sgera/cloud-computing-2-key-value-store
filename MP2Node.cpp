@@ -112,7 +112,7 @@ size_t MP2Node::hashFunction(string key) {
 }
 
 void MP2Node::sendMessage(Address* toAddr, Message& message) {
-	std::cout<<"Sending Message: " + message.key;
+	log->LOG(&memberNode->addr, ("Sending Message: " + message.toString()).c_str());
 	string data = message.toString();
 	emulNet->ENsend(&memberNode->addr, toAddr, data);
 }
@@ -129,7 +129,7 @@ void MP2Node::sendMessage(Address* toAddr, Message& message) {
 void MP2Node::clientCreate(string key, string value) {
 	Message message(++g_transID1, memberNode->addr, MessageType::CREATE, key, value);
 	
-	log->LOG(&memberNode->addr, ("Transaction ID: " + std::to_string(g_transID1)).c_str());
+	//log->LOG(&memberNode->addr, ("Transaction ID: " + std::to_string(g_transID1)).c_str());
 	//Keep global state for tracking QUORUMS
 	RequestResponseState requestResponseState(key, value, par->getcurrtime(), 0);
 	requestResponseStateMap.emplace(g_transID1, requestResponseState);
@@ -332,9 +332,14 @@ void MP2Node::checkMessages() {
 		
 		case MessageType::CREATE: 
 		{
+			//log->LOG(&memberNode->addr, ("Received create message for transID: " + std::to_string(message.transID)).c_str());
+			log->LOG(&memberNode->addr, ("Received Create message: " + message.toString()).c_str());
 			bool result = createKeyValue(message.key, message.value, ReplicaType::SECONDARY);
+			
 			//Reply if this client-initiated
 			if(message.transID != 0) {
+				Message reply(message.transID, memberNode->addr, MessageType::REPLY, result);
+				sendMessage(&message.fromAddr, reply);
 
 #ifdef DEBUGLOGMP2
 				if(result) {
@@ -344,27 +349,21 @@ void MP2Node::checkMessages() {
 					log->logCreateFail(&memberNode->addr, false, message.transID, message.key, message.value);
 				}
 #endif
-
-				Message message(message.transID, memberNode->addr, MessageType::REPLY, result);
-				sendMessage(&message.fromAddr, message);
 			}
 		break;
 		}
 		case MessageType::REPLY: 
-			log->LOG(&memberNode->addr, ("Received reply for transID: " + std::to_string(message.transID)).c_str());
-			log->LOG(&memberNode->addr, ("Message: " + strMessage).c_str());
+			log->LOG(&memberNode->addr, ("Received reply message: " + strMessage).c_str());
 			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
 			if(itr != requestResponseStateMap.end()) {
-				RequestResponseState state = itr->second;
-				int requestTime = state.requestTime;
-				int responseCount = state.responseCount + 1;
+				itr->second.responseCount++; 	//Incr response count
 
 				log->LOG(&memberNode->addr, ("Received reply for transID: " + std::to_string(message.transID)).c_str());
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
 				//If QUORUM, log success message and remove entry from global state
-				if(responseCount >= 2) {
+				if(itr->second.responseCount >= 2) {
 #ifdef DEBUGLOGMP2	
-					log->logCreateSuccess(&memberNode->addr, true, message.transID, message.key, message.value);
+					log->logCreateSuccess(&memberNode->addr, true, message.transID, itr->second.key, itr->second.value);
 #endif
 					requestResponseStateMap.erase(message.transID);
 				}
