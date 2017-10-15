@@ -131,7 +131,7 @@ void MP2Node::clientCreate(string key, string value) {
 	
 	//log->LOG(&memberNode->addr, ("Transaction ID: " + std::to_string(g_transID1)).c_str());
 	//Keep global state for tracking QUORUMS
-	RequestResponseState requestResponseState(key, value, par->getcurrtime(), 0);
+	RequestResponseState requestResponseState(key, value, MessageType::CREATE, par->getcurrtime(), 0);
 	requestResponseStateMap.emplace(g_transID1, requestResponseState);
 	
 	vector<Node> replicas = findNodes(key);
@@ -152,8 +152,9 @@ void MP2Node::clientCreate(string key, string value) {
 void MP2Node::clientRead(string key){
 	Message message(++g_transID1, memberNode->addr, MessageType::READ, key);
 	
-	//TODO: Keep state of this transaction ID and read request.
-	//Log when QUORUM read-replies are recieved for this transaction ID.
+	RequestResponseState requestResponseState(key, "", MessageType::READ, par->getcurrtime(), 0);
+	requestResponseStateMap.emplace(g_transID1, requestResponseState);
+	
 	vector<Node> replicas = findNodes(key);
 	for(Node& node : replicas) {
 		sendMessage(&node.nodeAddress, message);
@@ -225,16 +226,6 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
 string MP2Node::readKey(string key) {
 
 	string value = ht->read(key);
-
-#ifdef DEBUGLOGMP2
-	if(value.empty()) {
-		log->logReadFail(&memberNode->addr, false, 0, key);
-	}
-	else {
-		log->logReadSuccess(&memberNode->addr, false, 0, key, value);
-	}
-#endif
-
 	return value;
 }
 
@@ -311,7 +302,23 @@ void MP2Node::checkMessages() {
 
 		if(par->getcurrtime() - requestTime > RESPONSE_EXPIRY_TIME) {
 #ifdef DEBUGLOGMP2
-			log->logCreateFail(&memberNode->addr, true, transID, key, value);
+			switch(state.second.requestType) {
+				case MessageType::CREATE:
+					log->logCreateFail(&memberNode->addr, true, transID, key, value);
+					break;
+				
+				case MessageType::UPDATE:
+					log->logUpdateFail(&memberNode->addr, true, transID, key, value);
+					break;
+				
+				case MessageType::DELETE:
+					log->logDeleteFail(&memberNode->addr, true, transID, key);
+					break;
+				
+				case MessageType::READ:
+					log->logReadFail(&memberNode->addr, true, transID, key);
+					break;
+			};
 #endif
 			requestResponseStateMap.erase(transID);
 		}
@@ -352,18 +359,56 @@ void MP2Node::checkMessages() {
 			}
 		break;
 		}
+		case MessageType::READ: 
+		{
+			log->LOG(&memberNode->addr, ("Received Read message: " + message.toString()).c_str());
+			string value = readKey(message.key);
+			
+			//Reply if this client-initiated
+			if(message.transID != 0) {
+				Message reply(message.transID, memberNode->addr, MessageType::READREPLY, value);
+				sendMessage(&message.fromAddr, reply);
+
+#ifdef DEBUGLOGMP2
+				if(value.empty()) {
+					log->logReadFail(&memberNode->addr, false, message.transID, message.key);
+				}
+				else {
+					log->logReadSuccess(&memberNode->addr, false, message.transID, message.key, value);
+				}
+#endif
+			}
+			break;
+		}
 		case MessageType::REPLY: 
+		{
 			log->LOG(&memberNode->addr, ("Received reply message: " + strMessage).c_str());
 			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
 			if(itr != requestResponseStateMap.end()) {
-				itr->second.responseCount++; 	//Incr response count
+				//Incr response count if operation successful
+				if(message.success) { 
+					itr->second.responseCount++; 	
+				}
 
-				log->LOG(&memberNode->addr, ("Received reply for transID: " + std::to_string(message.transID)).c_str());
 				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
 				//If QUORUM, log success message and remove entry from global state
 				if(itr->second.responseCount >= 2) {
 #ifdef DEBUGLOGMP2	
-					log->logCreateSuccess(&memberNode->addr, true, message.transID, itr->second.key, itr->second.value);
+					switch(itr->second.requestType) {
+
+						case MessageType::CREATE:
+							log->logCreateSuccess(&memberNode->addr, true, message.transID, itr->second.key, itr->second.value);
+							break;
+						
+						case MessageType::UPDATE:
+							log->logUpdateSuccess(&memberNode->addr, true, message.transID, itr->second.key, itr->second.value);
+							break;
+						
+						case MessageType::DELETE:
+							log->logDeleteSuccess(&memberNode->addr, true, message.transID, itr->second.key);
+							break;
+					};
+					
 #endif
 					requestResponseStateMap.erase(message.transID);
 				}
@@ -372,7 +417,34 @@ void MP2Node::checkMessages() {
 				log->LOG(&memberNode->addr, ("No processing required for key: " + message.key).c_str());
 				//No processing required
 			}
+			break;
+		}
+		
+		case MessageType::READREPLY:
+		{
+			log->LOG(&memberNode->addr, ("Received read-reply message: " + strMessage).c_str());
+			map<int, RequestResponseState>::iterator itr = requestResponseStateMap.find(message.transID);
+			if(itr != requestResponseStateMap.end()) {
+				//Incr response count if operation successful
+				if(!message.value.empty()) { 
+					itr->second.responseCount++; 	
+				}
+
+				//Expired requests already handled above <<TODO: Issue in multi-threaded env>>			
+				//If QUORUM, log success message and remove entry from global state
+				if(itr->second.responseCount >= 2) {
+#ifdef DEBUGLOGMP2	
+					log->logReadSuccess(&memberNode->addr, true, message.transID, itr->second.key, message.value);
+#endif
+					requestResponseStateMap.erase(message.transID);
+				}
+			}
+			else {
+				log->LOG(&memberNode->addr, ("No read-reply processing required for key: " + message.key).c_str());
+			}
 		break;
+		}
+
 		};
 
 		//If I receive a create key request in the stabilization phase, 

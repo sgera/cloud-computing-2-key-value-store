@@ -1,4 +1,4 @@
-/**********************************
+	/**********************************
  * FILE NAME: MP2Node.h
  *
  * DESCRIPTION: MP2Node class header file
@@ -30,10 +30,12 @@ public:
 	string value;
 	int requestTime;
 	int responseCount;
+	MessageType requestType;	//Allowed values CREATE/UPDATE/DELETE
 
-	RequestResponseState(string key, string value, int requestTime, int responseCount) {
+	RequestResponseState(string key, string value, MessageType requestType, int requestTime, int responseCount) {
 		this->key = key;
 		this->value = value;
+		this->requestType = requestType;
 		this->requestTime = requestTime;
 		this->responseCount = responseCount;
 	}
